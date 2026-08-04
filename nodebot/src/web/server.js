@@ -180,8 +180,8 @@ function getMember(guild, userId) {
   return member;
 }
 
-function requireOwner(session) {
-  if (!OWNER_ID || String(session?.userId) !== String(OWNER_ID)) {
+function requireCalendarManager(session) {
+  if (session?.level !== 'creator') {
     throw new HttpError(403, 'Only the bot owner can manage Google Calendar.');
   }
 }
@@ -454,7 +454,7 @@ function buildRoutes(client) {
 
     // -- Google Calendar (owner connects their Google account) ---------------
     ['GET', '/api/guilds/:guildId/calendar/connect', async ({ params, req, res, session }) => {
-      requireOwner(session);
+      requireCalendarManager(session);
       getGuild(client, params.guildId);
       if (!googleCalendarConfigured()) throw new HttpError(503, 'Google Calendar is not configured on this server');
       res.writeHead(302, { Location: googleAuthorizeUrl(req, params.guildId) });
@@ -498,7 +498,7 @@ function buildRoutes(client) {
     }, { open: true }],
 
     ['DELETE', '/api/guilds/:guildId/calendar', async ({ params, session }) => {
-      requireOwner(session);
+      requireCalendarManager(session);
       getGuild(client, params.guildId);
       db.deleteCalendarConnection(params.guildId);
       db.setSetting(params.guildId, 'calendar_enabled', false);

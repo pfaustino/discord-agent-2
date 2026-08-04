@@ -471,6 +471,7 @@ function buildRoutes(client) {
         res.writeHead(302, { Location: `/?calendar_error=${encodeURIComponent(reason)}` });
         res.end();
       };
+      console.log(`[calendar] OAuth callback code=${query.code ? 'present' : 'missing'} state=${query.state ? 'present' : 'missing'} error=${query.error || 'none'}`);
       if (!googleCalendarConfigured()) return fail('Google Calendar is not configured');
       if (!query.code) return fail(query.error_description || 'Google returned no code');
       const guildId = guildIdFromState(query.state);

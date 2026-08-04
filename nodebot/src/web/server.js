@@ -44,6 +44,7 @@ import {
   exchangeCode as googleExchangeCode,
   fetchGoogleEmail,
   guildIdFromState,
+  redirectUri,
 } from '../googleCalendar/oauth.js';
 import { listCalendars } from '../googleCalendar/client.js';
 import { statusMeta as calendarStatusMeta } from '../calendarTools.js';
@@ -457,7 +458,10 @@ function buildRoutes(client) {
       requireCalendarManager(session);
       getGuild(client, params.guildId);
       if (!googleCalendarConfigured()) throw new HttpError(503, 'Google Calendar is not configured on this server');
-      res.writeHead(302, { Location: googleAuthorizeUrl(req, params.guildId) });
+      const uri = redirectUri(req);
+      const location = googleAuthorizeUrl(req, params.guildId);
+      console.log(`[calendar] OAuth start guild=${params.guildId} redirect_uri=${uri} location=${location}`);
+      res.writeHead(302, { Location: location });
       res.end();
     }, { level: 'admin' }],
 

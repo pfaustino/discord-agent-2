@@ -48,6 +48,12 @@ export const OPENROUTER_VIDEO_MODEL = process.env.OPENROUTER_VIDEO_MODEL || 'goo
 // Pin a commit, not a tag: tags can be moved after review. Needs uv on the host.
 export const CHANNEL_BRAINS_SOURCE = process.env.CHANNEL_BRAINS_SOURCE || '';
 
+// Google Calendar — dashboard OAuth + AI calendar tools. Create credentials at
+// console.cloud.google.com, enable Calendar API, add redirect URI
+// <PUBLIC_URL>/api/calendar/callback. See documents/07-google-calendar.md.
+export const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || '';
+export const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET || '';
+
 // GitHub read access. The token is optional — without it the API still
 // works anonymously at 60 requests/hour instead of 5000. GITHUB_REPO is the
 // repo Max lives in, which is what the branch/PR/diff tools read.

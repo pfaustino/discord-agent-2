@@ -116,6 +116,14 @@ CREATE INDEX IF NOT EXISTS idx_warnings_guild_user ON warnings (guild_id, user_i
 CREATE INDEX IF NOT EXISTS idx_logs_guild ON mod_logs (guild_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_memver ON memory_versions (guild_id, kind, version);
 CREATE INDEX IF NOT EXISTS idx_turns_guild_consolidated ON turns (guild_id, consolidated);
+CREATE TABLE IF NOT EXISTS google_calendar_connections (
+    guild_id          TEXT PRIMARY KEY,
+    email             TEXT NOT NULL,
+    refresh_token     TEXT NOT NULL,
+    access_token      TEXT,
+    access_expires_at INTEGER,
+    connected_at      INTEGER NOT NULL
+);
 `;
 
 export const MEMORY_VERSIONS_KEPT = 10;
@@ -218,6 +226,13 @@ export const DEFAULTS = {
   // Spend breaker for the expensive half: videos per guild per hour, 0 to
   // disable the cap entirely. Images are cheap enough to leave uncapped.
   media_video_hourly_cap: 5,
+  // Google Calendar — owner's account connected via dashboard OAuth.
+  // Writes are always owner-only in calendarTools.js; calendar_read_access
+  // controls whether non-owners may list upcoming events.
+  calendar_enabled: false,
+  calendar_read_access: 'owner',
+  calendar_id: 'primary',
+  calendar_timezone: null,
   // What each model was before the last backend switch, so "switch back"
   // works after she has rerouted around a rate-limited provider. Persisted
   // rather than held in memory so a redeploy mid-incident doesn't strand a
@@ -364,6 +379,39 @@ export function setSetting(guildId, key, value) {
     'INSERT INTO guild_settings (guild_id, key, value) VALUES (?, ?, ?) '
     + 'ON CONFLICT (guild_id, key) DO UPDATE SET value = excluded.value',
   ).run(String(guildId), key, JSON.stringify(value));
+}
+
+// -- Google Calendar OAuth tokens -----------------------------------------
+
+export function getCalendarConnection(guildId) {
+  return db.prepare(
+    'SELECT guild_id, email, refresh_token, access_token, access_expires_at, connected_at '
+    + 'FROM google_calendar_connections WHERE guild_id = ?',
+  ).get(String(guildId)) || null;
+}
+
+export function saveCalendarConnection(guildId, { email, refreshToken, accessToken = null, accessExpiresAt = null }) {
+  db.prepare(
+    'INSERT INTO google_calendar_connections '
+    + '(guild_id, email, refresh_token, access_token, access_expires_at, connected_at) '
+    + 'VALUES (?, ?, ?, ?, ?, ?) '
+    + 'ON CONFLICT (guild_id) DO UPDATE SET '
+    + 'email = excluded.email, refresh_token = excluded.refresh_token, '
+    + 'access_token = excluded.access_token, access_expires_at = excluded.access_expires_at, '
+    + 'connected_at = excluded.connected_at',
+  ).run(
+    String(guildId), email, refreshToken, accessToken, accessExpiresAt, now(),
+  );
+}
+
+export function updateCalendarAccessToken(guildId, accessToken, accessExpiresAt) {
+  db.prepare(
+    'UPDATE google_calendar_connections SET access_token = ?, access_expires_at = ? WHERE guild_id = ?',
+  ).run(accessToken, accessExpiresAt, String(guildId));
+}
+
+export function deleteCalendarConnection(guildId) {
+  db.prepare('DELETE FROM google_calendar_connections WHERE guild_id = ?').run(String(guildId));
 }
 
 // -- AI memory ------------------------------------------------------------

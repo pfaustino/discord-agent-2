@@ -91,3 +91,22 @@ export function verifyState(state) {
   if (!safeEqual(signature, sign(`${expiry}.${nonce}`))) return false;
   return parseInt(expiry, 10) > Date.now() / 1000;
 }
+
+/** Signed OAuth state that carries an arbitrary binding (e.g. guild id). */
+export function createBoundState(binding) {
+  const expiry = String(Math.floor(Date.now() / 1000) + 600);
+  const nonce = randomBytes(12).toString('hex');
+  const payload = `${expiry}.${encodeURIComponent(binding)}.${nonce}`;
+  return `${payload}.${sign(payload)}`;
+}
+
+/** @returns {string|null} the binding if valid, else null */
+export function readBoundState(state) {
+  const parts = String(state || '').split('.');
+  if (parts.length !== 4) return null;
+  const [expiry, binding, nonce, signature] = parts;
+  const payload = `${expiry}.${binding}.${nonce}`;
+  if (!safeEqual(signature, sign(payload))) return null;
+  if (parseInt(expiry, 10) <= Date.now() / 1000) return null;
+  return decodeURIComponent(binding);
+}

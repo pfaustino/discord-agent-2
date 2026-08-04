@@ -12,7 +12,7 @@
 import * as db from './db.js';
 import { botName } from './botName.js';
 import {
-  OWNER_NOTE, MEMBER_NOTE, MEDIA_NOTE, VISION_NOTE, CHANNEL_BRAINS_NOTE,
+  OWNER_NOTE, MEMBER_NOTE, MEDIA_NOTE, VISION_NOTE, CHANNEL_BRAINS_NOTE, CALENDAR_NOTE,
 } from './persona.js';
 // Safe import: channelBrains.js reads only config.js, so no cycle through db.
 import { enabled as channelBrainsEnabled } from './channelBrains.js';
@@ -44,9 +44,10 @@ export function commandList(client) {
  * @param {boolean} opts.owner    is the speaker the bot owner
  * @param {string}  opts.memory   memory block, already rendered (may be empty)
  * @param {boolean} opts.media    may this speaker generate images/video
+ * @param {boolean} opts.calendar  may this speaker use calendar tools
  */
 export function buildSystemPrompt({
-  client, guild, owner = false, memory = '', media = false,
+  client, guild, owner = false, memory = '', media = false, calendar = false,
 }) {
   const persona = db.getSetting(guild.id, 'ai_system_prompt');
   const capabilities = db.getSetting(guild.id, 'ai_capability_prompt');
@@ -64,6 +65,7 @@ export function buildSystemPrompt({
     capabilities,
     VISION_NOTE,
     media ? MEDIA_NOTE : '',
+    calendar ? CALENDAR_NOTE : '',
     channelBrainsEnabled() ? CHANNEL_BRAINS_NOTE : '',
     owner ? OWNER_NOTE : MEMBER_NOTE,
     memory ? `What you remember (maintained across restarts):\n${memory}` : '',

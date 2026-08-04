@@ -157,6 +157,16 @@ export const MEDIA_NOTE = (
   + 'and do not say it is on the way, because it has already landed.'
 );
 
+export const CALENDAR_NOTE = (
+  'GOOGLE CALENDAR. When connected and enabled, you can list upcoming events '
+  + 'with list_calendar_events, and the bot owner can create, update, and delete '
+  + 'events with create_calendar_event, update_calendar_event, and delete_calendar_event. '
+  + 'Use list_calendar_events when someone asks what is on the schedule — do not '
+  + 'guess. Only the owner may change the calendar; if someone else asks you to '
+  + 'add or move an event, say only the owner can do that. Times should be ISO '
+  + 'with timezone when possible.'
+);
+
 // Gated on the channel-brains sidecar being configured (channelBrains.js
 // enabled()), deployment-wide rather than per guild or per speaker: search
 // is open to everyone wherever the sidecar exists, and a note the model

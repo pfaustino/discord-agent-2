@@ -46,7 +46,7 @@ const TOKEN_RES = [
 const SECRET_NAMES = [
   'DISCORD_TOKEN', 'OPENROUTER_API_KEY', 'DASHBOARD_PASSWORD', 'SECRET_KEY',
   'TRANSCRIPTION_API_KEY', 'FISH_API_KEY', 'GITHUB_TOKEN', 'GITHUB_WRITE_TOKEN',
-  'E2B_API_KEY',
+  'E2B_API_KEY', 'GOOGLE_CLIENT_SECRET',
 ];
 
 /** Mask configured secret values and common token shapes. */

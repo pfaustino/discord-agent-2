@@ -11,6 +11,7 @@ import { KB_TOOL_SCHEMAS, runTool as runKbTool } from './knowledge.js';
 import * as agentTools from './agentTools.js';
 import * as mediaTools from './mediaTools.js';
 import * as channelBrains from './channelBrains.js';
+import * as calendarTools from './calendarTools.js';
 import * as documents from './documents.js';
 import * as github from './github.js';
 import * as introspect from './introspect.js';
@@ -110,6 +111,7 @@ function toolHandler(client, message, owner) {
     // Not gated on owner: a guild can open generation up to everyone, and
     // mediaTools.execute re-checks that itself rather than trusting us.
     if (name in mediaTools.TOOLS) return mediaTools.execute(client, message, name, args);
+    if (name in calendarTools.TOOLS) return calendarTools.execute(client, message, name, args, owner);
     // Same shape: execute re-checks the owner gate on index/delete itself.
     if (channelBrains.isChannelBrainsTool(name)) return channelBrains.execute(name, args, owner);
     return runTool(name, args);
@@ -202,8 +204,9 @@ export async function handleMessage(client, message) {
   // Whether this speaker may generate images/video — the prompt has to know
   // so he doesn't offer a picture he isn't allowed to draw.
   const canGenerate = await mediaTools.allowed(message);
+  const canUseCalendar = calendarTools.canRead(message, owner) || calendarTools.canWrite(message, owner);
   const systemPrompt = buildSystemPrompt({
-    client, guild: message.guild, owner, memory: memoryBlock, media: canGenerate,
+    client, guild: message.guild, owner, memory: memoryBlock, media: canGenerate, calendar: canUseCalendar,
   });
   const model = modelForTurn(guildId, imageParts.length > 0);
   const baseTools = [
@@ -216,6 +219,7 @@ export async function handleMessage(client, message) {
     ...baseTools,
     ...(owner ? agentTools.TOOL_SCHEMAS : []),
     ...(canGenerate ? mediaTools.TOOL_SCHEMAS : []),
+    ...calendarTools.schemasFor(message, owner),
     // Sidecar feature flag first: a deploy without the sidecar never offers
     // these at all. Search stays open to the guild; indexing is owner-only.
     ...(channelBrains.enabled() ? channelBrains.TOOL_SCHEMAS : []),

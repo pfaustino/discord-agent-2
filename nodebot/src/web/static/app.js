@@ -184,6 +184,19 @@ async function init() {
     state.guildId = state.guilds[0].id;
   }
   sel.value = state.guildId;
+  const params = new URLSearchParams(location.search);
+  if (params.get("calendar_connected")) {
+    sessionStorage.setItem(SETTINGS_TAB_KEY, "calendar");
+    state.tab = "settings";
+    document.querySelectorAll("#tabbar button").forEach((b) =>
+      b.classList.toggle("active", b.dataset.tab === "settings"));
+    toast("Google Calendar connected");
+    history.replaceState({}, "", location.pathname);
+  }
+  if (params.get("calendar_error")) {
+    toast(params.get("calendar_error"));
+    history.replaceState({}, "", location.pathname);
+  }
   render();
 }
 
@@ -812,6 +825,7 @@ async function renderSettings() {
     { id: "access", label: "Dashboard access" },
     { id: "ai", label: "AI" },
     { id: "media", label: "Images & video" },
+    { id: "calendar", label: "Calendar" },
     { id: "voice-detect", label: "Voice detection" },
     { id: "voice-cues", label: "Voice cues" },
     { id: "voice-phrases", label: "Wake & stop words" },
@@ -827,6 +841,24 @@ async function renderSettings() {
   const fishKeyBadge = settings.fish_api_configured
     ? '<span class="badge ok">Fish API key on server</span>'
     : '<span class="badge warn">No Fish API key — Edge TTS only</span>';
+
+  const calendarApiBadge = settings.calendar_api_configured
+    ? '<span class="badge ok">Google OAuth configured on server</span>'
+    : '<span class="badge warn">Google OAuth not configured — set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in Railway</span>';
+  const calendarConnBadge = settings.calendar_connected
+    ? `<span class="badge ok">Connected as ${esc(settings.calendar_email || "Google account")}</span>`
+    : '<span class="badge warn">Not connected</span>';
+  const calendarList = settings.calendar_list || [];
+  const calendarOptions = (selected) => {
+    const cur = selected || settings.calendar_id || "primary";
+    if (!calendarList.length) {
+      return `<option value="${esc(cur)}">${esc(cur)}</option>`;
+    }
+    return calendarList.map((c) =>
+      `<option value="${esc(c.id)}" ${String(cur) === c.id ? "selected" : ""}>`
+      + `${esc(c.summary)}${c.primary ? " (primary)" : ""}</option>`).join("");
+  };
+  const canManageCalendar = me.level === "creator";
 
   content().innerHTML = `
     <div class="settings-layout">
@@ -937,6 +969,37 @@ async function renderSettings() {
               request. Leave the models blank to follow whatever this instance is configured
               to use. Opening this to <strong>everyone</strong> hands the whole server a button
               that spends real money, so the hourly video cap is the safety net.</span>
+          </div>
+        </section>
+
+        <section class="settings-panel ${activeTab === "calendar" ? "active" : ""}" data-panel="calendar">
+          <div class="section-title">Google Calendar</div>
+          <div class="card">
+            <p style="margin-bottom:12px">${calendarApiBadge} ${calendarConnBadge}</p>
+            ${canManageCalendar ? `<div class="btn-row" style="margin-bottom:14px">
+              ${settings.calendar_api_configured && !settings.calendar_connected
+                ? `<a class="btn primary" href="/api/guilds/${state.guildId}/calendar/connect">Connect Google Calendar</a>`
+                : ""}
+              ${settings.calendar_connected
+                ? `<button type="button" class="btn" id="calendar-disconnect">Disconnect</button>`
+                : ""}
+            </div>` : `<span class="muted" style="display:block;margin-bottom:14px">Only the bot owner can connect or disconnect Google Calendar.</span>`}
+            <span class="muted" style="display:block;margin-bottom:14px">Connect <strong>your</strong> Google account so Helena can read and (for you only) change your calendars. See <code>documents/07-google-calendar.md</code> in the repo for Google Cloud setup steps.</span>
+            <label class="toggle"><input type="checkbox" id="s-calendar_enabled"
+              ${settings.calendar_enabled ? "checked" : ""} ${settings.calendar_connected ? "" : "disabled"}>
+              Let the bot use Google Calendar</label>
+            <label class="field"><span class="lbl">Who can ask about events</span>
+              <select id="s-calendar_read_access" ${settings.calendar_connected ? "" : "disabled"}>
+                <option value="owner" ${settings.calendar_read_access !== "everyone" ? "selected" : ""}>Owner only</option>
+                <option value="everyone" ${settings.calendar_read_access === "everyone" ? "selected" : ""}>Everyone in this server</option>
+              </select></label>
+            <span class="muted">Adding, changing, and deleting events is always <strong>owner only</strong>, even when everyone can read.</span>
+            <label class="field" style="margin-top:14px"><span class="lbl">Calendar to use</span>
+              <select id="s-calendar_id" ${settings.calendar_connected ? "" : "disabled"}>${calendarOptions(settings.calendar_id)}</select></label>
+            <label class="field"><span class="lbl">Time zone (optional)</span>
+              <input id="s-calendar_timezone" value="${esc(settings.calendar_timezone || "")}"
+                placeholder="America/Los_Angeles" ${settings.calendar_connected ? "" : "disabled"}></label>
+            <span class="muted">Leave time zone blank to use ISO times as sent by the model. Connect first, then save.</span>
           </div>
         </section>
 
@@ -1089,6 +1152,15 @@ async function renderSettings() {
     btn.onclick = () => showSettingsPanel(btn.dataset.settingsTab);
   });
 
+  const disconnectBtn = $("#calendar-disconnect");
+  if (disconnectBtn) {
+    disconnectBtn.onclick = () => confirmAction("Disconnect Google Calendar for this server?", async () => {
+      await api(`/guilds/${state.guildId}/calendar`, { method: "DELETE" });
+      toast("Calendar disconnected");
+      renderSettings();
+    });
+  }
+
   $("#memory-view-btn").onclick = async () => {
     const m = await api(`/guilds/${state.guildId}/memory`);
     openModal(`
@@ -1125,6 +1197,10 @@ async function renderSettings() {
       media_video_model: $("#s-media_video_model").value.trim(),
       media_vision_model: $("#s-media_vision_model").value.trim(),
       media_video_hourly_cap: parseInt($("#s-media_video_hourly_cap").value, 10) || 0,
+      calendar_enabled: $("#s-calendar_enabled").checked,
+      calendar_read_access: $("#s-calendar_read_access").value,
+      calendar_id: $("#s-calendar_id").value,
+      calendar_timezone: $("#s-calendar_timezone").value.trim(),
       pressure_enabled: $("#s-pressure_enabled").checked,
       deesc_enabled: $("#s-deesc_enabled").checked,
       deesc_harsh_language: $("#s-deesc_harsh_language").checked,

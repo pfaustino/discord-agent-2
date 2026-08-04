@@ -38,9 +38,18 @@ import * as logbuffer from '../logbuffer.js';
 import * as voice from '../voice.js';
 import * as db from '../db.js';
 import { ttsSettingsMeta } from '../ttsConfig.js';
+import {
+  googleCalendarConfigured,
+  authorizeUrl as googleAuthorizeUrl,
+  exchangeCode as googleExchangeCode,
+  fetchGoogleEmail,
+  guildIdFromState,
+} from '../googleCalendar/oauth.js';
+import { listCalendars } from '../googleCalendar/client.js';
+import { statusMeta as calendarStatusMeta } from '../calendarTools.js';
 
 const OPTIONAL_STRING_SETTINGS = new Set([
-  'bot_name', 'fish_voice_id', 'fish_tts_model', 'edge_tts_voice',
+  'bot_name', 'fish_voice_id', 'fish_tts_model', 'edge_tts_voice', 'calendar_id', 'calendar_timezone',
 ]);
 const STATIC_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), 'static');
 // The showcase site at the repo root, served read-only under /site. It is a
@@ -169,6 +178,12 @@ function getMember(guild, userId) {
   const member = guild.members.cache.get(String(userId));
   if (!member) throw new HttpError(404, 'Member not found');
   return member;
+}
+
+function requireOwner(session) {
+  if (!OWNER_ID || String(session?.userId) !== String(OWNER_ID)) {
+    throw new HttpError(403, 'Only the bot owner can manage Google Calendar.');
+  }
 }
 
 /**
@@ -384,6 +399,14 @@ function buildRoutes(client) {
 
     ['GET', '/api/guilds/:guildId/settings', async ({ params }) => {
       const g = getGuild(client, params.guildId);
+      let calendarList = [];
+      if (db.getCalendarConnection(g.id) && googleCalendarConfigured()) {
+        try {
+          calendarList = await listCalendars(g.id);
+        } catch (err) {
+          console.warn('[calendar] could not list calendars:', err.message);
+        }
+      }
       return {
         ...db.getAllSettings(g.id),
         // Read-only companions to the stored `bot_name`, so the dashboard can
@@ -393,6 +416,8 @@ function buildRoutes(client) {
         bot_name_source: db.getSetting(g.id, 'bot_name') ? 'override' : 'discord',
         fish_api_configured: Boolean(FISH_API_KEY),
         ...ttsSettingsMeta(g.id),
+        ...calendarStatusMeta(g.id),
+        calendar_list: calendarList,
       };
     }, { level: 'moderator' }],
 
@@ -406,7 +431,12 @@ function buildRoutes(client) {
         if (key === 'fish_api_configured'
           || key.startsWith('fish_voice_id_')
           || key.startsWith('fish_tts_model_')
-          || key.startsWith('edge_tts_voice_')) continue;
+          || key.startsWith('edge_tts_voice_')
+          || key === 'calendar_api_configured'
+          || key === 'calendar_connected'
+          || key === 'calendar_email'
+          || key === 'calendar_connected_at'
+          || key === 'calendar_list') continue;
         if (!(key in db.DEFAULTS)) throw new HttpError(400, `Unknown setting: ${key}`);
         if (OPTIONAL_STRING_SETTINGS.has(key)) {
           const text = typeof value === 'string' ? value.trim() : '';
@@ -419,6 +449,59 @@ function buildRoutes(client) {
         // saved is exactly what the matcher will compare against.
         db.setSetting(g.id, key, PHRASE_LIST_KEYS.has(key) ? parsePhraseList(value) : value);
       }
+      return { ok: true };
+    }, { level: 'admin' }],
+
+    // -- Google Calendar (owner connects their Google account) ---------------
+    ['GET', '/api/guilds/:guildId/calendar/connect', async ({ params, req, res, session }) => {
+      requireOwner(session);
+      getGuild(client, params.guildId);
+      if (!googleCalendarConfigured()) throw new HttpError(503, 'Google Calendar is not configured on this server');
+      res.writeHead(302, { Location: googleAuthorizeUrl(req, params.guildId) });
+      res.end();
+    }, { level: 'admin' }],
+
+    ['GET', '/api/calendar/callback', async ({ query, req, res }) => {
+      const fail = (reason) => {
+        console.warn(`[calendar] OAuth rejected: ${reason}`);
+        res.writeHead(302, { Location: `/?calendar_error=${encodeURIComponent(reason)}` });
+        res.end();
+      };
+      if (!googleCalendarConfigured()) return fail('Google Calendar is not configured');
+      if (!query.code) return fail(query.error_description || 'Google returned no code');
+      const guildId = guildIdFromState(query.state);
+      if (!guildId) return fail('Login session expired — try Connect again');
+      try {
+        getGuild(client, guildId);
+      } catch {
+        return fail('Server not found');
+      }
+      let tokens;
+      try {
+        tokens = await googleExchangeCode(query.code, req);
+      } catch (err) {
+        return fail(err.message);
+      }
+      const email = await fetchGoogleEmail(tokens.access_token);
+      const expiresAt = Math.floor(Date.now() / 1000) + (parseInt(tokens.expires_in, 10) || 3600);
+      db.saveCalendarConnection(guildId, {
+        email,
+        refreshToken: tokens.refresh_token,
+        accessToken: tokens.access_token,
+        accessExpiresAt: expiresAt,
+      });
+      db.setSetting(guildId, 'calendar_enabled', true);
+      if (!db.hasSetting(guildId, 'calendar_id')) db.setSetting(guildId, 'calendar_id', 'primary');
+      console.log(`[calendar] connected ${email} for guild ${guildId}`);
+      res.writeHead(302, { Location: `/?calendar_connected=1&guild=${encodeURIComponent(guildId)}` });
+      res.end();
+    }, { open: true }],
+
+    ['DELETE', '/api/guilds/:guildId/calendar', async ({ params, session }) => {
+      requireOwner(session);
+      getGuild(client, params.guildId);
+      db.deleteCalendarConnection(params.guildId);
+      db.setSetting(params.guildId, 'calendar_enabled', false);
       return { ok: true };
     }, { level: 'admin' }],
 

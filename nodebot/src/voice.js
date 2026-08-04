@@ -566,6 +566,7 @@ async function respond(channel, speakerName, speakerId, state, { followUp = fals
   };
   const canGenerate = await mediaTools.allowed(fakeMessage);
   const canUseCalendar = calendarTools.canRead(fakeMessage, owner) || calendarTools.canWrite(fakeMessage, owner);
+  console.log(`[calendar] voice guild=${guild.id} owner=${owner} enabled=${calendarTools.enabled(guild.id)} canRead=${calendarTools.canRead(fakeMessage, owner)} canWrite=${calendarTools.canWrite(fakeMessage, owner)}`);
   let systemPrompt = buildSystemPrompt({
     client: channel.client, guild, owner, memory: memoryBlock, media: canGenerate, calendar: canUseCalendar,
   }) + VOICE_PROMPT({

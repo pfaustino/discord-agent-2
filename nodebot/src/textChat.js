@@ -205,6 +205,7 @@ export async function handleMessage(client, message) {
   // so he doesn't offer a picture he isn't allowed to draw.
   const canGenerate = await mediaTools.allowed(message);
   const canUseCalendar = calendarTools.canRead(message, owner) || calendarTools.canWrite(message, owner);
+  console.log(`[calendar] textChat guild=${message.guild.id} owner=${owner} enabled=${calendarTools.enabled(message.guild.id)} canRead=${calendarTools.canRead(message, owner)} canWrite=${calendarTools.canWrite(message, owner)}`);
   const systemPrompt = buildSystemPrompt({
     client, guild: message.guild, owner, memory: memoryBlock, media: canGenerate, calendar: canUseCalendar,
   });

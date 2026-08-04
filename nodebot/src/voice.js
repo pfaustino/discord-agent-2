@@ -673,6 +673,7 @@ async function respond(channel, speakerName, speakerId, state, { followUp = fals
   // leads the reply rather than trailing it. playCue resolves once the tone
   // has finished, which is also what keeps it from colliding with speech.
   await playCue(guild, channel, 'engaging', { players });
+  console.log(`[voice] [#${channel.name}] ${self}: ${display}`);
   recordTurn(guild.id, { source: 'voice', channel: channel.name, speaker: self, text: display });
   // userId null: the bot doesn't get a profile card built about itself.
   memory.recordTurn(guild.id, self, display, {

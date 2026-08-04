@@ -6,8 +6,8 @@ const AUTHORIZE_URL = 'https://accounts.google.com/o/oauth2/v2/auth';
 const TOKEN_URL = 'https://oauth2.googleapis.com/token';
 const USERINFO_URL = 'https://www.googleapis.com/oauth2/v2/userinfo';
 
-// Full calendar access — the connected account is the bot owner's calendar.
-export const CALENDAR_SCOPE = 'https://www.googleapis.com/auth/calendar';
+// Calendar access plus userinfo.email so we can show which Google account connected.
+export const CALENDAR_SCOPES = 'https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/userinfo.email';
 
 export class GoogleOAuthError extends Error {}
 
@@ -27,7 +27,7 @@ export function authorizeUrl(req, guildId) {
     client_id: GOOGLE_CLIENT_ID,
     redirect_uri: redirectUri(req),
     response_type: 'code',
-    scope: CALENDAR_SCOPE,
+    scope: CALENDAR_SCOPES,
     access_type: 'offline',
     prompt: 'consent',
     state: createBoundState(`calendar:${guildId}`),

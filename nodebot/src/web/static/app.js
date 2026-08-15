@@ -1098,6 +1098,17 @@ async function renderSettings() {
             <label class="toggle"><input type="checkbox" id="s-pressure_enabled"
               ${settings.pressure_enabled ? "checked" : ""}> Speak up unprompted when pressure builds</label>
           </div>
+          <div class="section-title">Question of the day</div>
+          <div class="card">
+            <label class="toggle"><input type="checkbox" id="s-qod_enabled"
+              ${settings.qod_enabled ? "checked" : ""}> Ask a question of the day</label>
+            <label class="field"><span class="lbl">Channel</span>
+              <select id="s-qod_channel">${channelOptions(settings.qod_channel)}</select></label>
+            <label class="field"><span class="lbl">Time (HH:MM, 24h)</span>
+              <input id="s-qod_time" value="${esc(settings.qod_time || "09:00")}" placeholder="09:00"></label>
+            <label class="field"><span class="lbl">Timezone (IANA, empty = UTC)</span>
+              <input id="s-qod_timezone" value="${esc(settings.qod_timezone || "")}" placeholder="America/Los_Angeles"></label>
+          </div>
         </section>
 
         <section class="settings-panel ${activeTab === "deescalation" ? "active" : ""}" data-panel="deescalation">
@@ -1202,6 +1213,10 @@ async function renderSettings() {
       calendar_id: $("#s-calendar_id").value,
       calendar_timezone: $("#s-calendar_timezone").value.trim(),
       pressure_enabled: $("#s-pressure_enabled").checked,
+      qod_enabled: $("#s-qod_enabled").checked,
+      qod_channel: $("#s-qod_channel").value || null,
+      qod_time: $("#s-qod_time").value.trim() || "09:00",
+      qod_timezone: $("#s-qod_timezone").value.trim(),
       deesc_enabled: $("#s-deesc_enabled").checked,
       deesc_harsh_language: $("#s-deesc_harsh_language").checked,
       ai_channels: [...$("#s-ai_channels").selectedOptions].map((o) => o.value),

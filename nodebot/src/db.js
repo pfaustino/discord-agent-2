@@ -196,6 +196,17 @@ export const DEFAULTS = {
   // proactive speech (pressure engine) — off until deliberately enabled,
   // same as the Python bot: speaking unprompted is opt-in per guild.
   pressure_enabled: false,
+  // Question of the day: once per day Helena asks an open question in a
+  // chosen channel to spark discussion. Independent of the pressure engine —
+  // qod_enabled alone is enough; pressure_enabled gates only unprompted
+  // pressure-driven speech. qod_time is "HH:MM" in qod_timezone (IANA name;
+  // null = UTC). qod_last_date ("YYYY-MM-DD" in that timezone) prevents
+  // double-posting within a day and across restarts.
+  qod_enabled: false,
+  qod_channel: null,
+  qod_time: '09:00',
+  qod_timezone: null,
+  qod_last_date: null,
   // de-escalation. deesc_harsh_language is the separate server preference
   // track that can produce a gentle check-in but never climbs the ladder.
   deesc_enabled: false,

@@ -223,6 +223,9 @@ export function startTicker(client) {
             (err) => console.error('[proactive] speak failed:', err?.message || err),
           );
         }
+        maybeAskQuestionOfDay(guild, now).catch(
+          (err) => console.error('[qod] failed:', err?.message || err),
+        );
       } catch (err) {
         console.error('[proactive] tick failed:', err?.message || err);
       }
@@ -361,6 +364,107 @@ async function draftAndSpeak(guild, engine, channel, cand, now) {
       await voice.speakInVoice(guild, message);
     } catch (err) {
       console.error('[proactive] voice playback failed:', err?.message || err);
+    }
+  }
+}
+
+// -- question of the day ------------------------------------------------------
+
+const QOD_PROMPT = ({ channel, context }) => (
+  'You are starting a "question of the day" in the Discord channel '
+  + `"${channel}". Write ONE open-ended question that invites people to share `
+  + 'an opinion, memory, or preference — something that can spark a real '
+  + 'conversation, not a yes/no or trivia question. Keep it to a single '
+  + 'sentence, in your usual conversational voice. Do not answer it yourself.\n'
+  + (context ? `Recent conversation for flavour (optional inspiration):\n${context}\n` : '')
+  + 'Reply ONLY with the question text, no preamble.'
+);
+
+/** "HH:MM" and "YYYY-MM-DD" for `date` in `tz` (IANA name, null = UTC). */
+function localParts(date, tz) {
+  const dtf = new Intl.DateTimeFormat('en-CA', {
+    timeZone: tz || 'UTC',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hour12: false,
+  });
+  const parts = Object.fromEntries(
+    dtf.formatToParts(date).filter((p) => p.type !== 'literal').map((p) => [p.type, p.value]),
+  );
+  return {
+    time: `${parts.hour}:${parts.minute}`,
+    date: `${parts.year}-${parts.month}-${parts.day}`,
+  };
+}
+
+async function maybeAskQuestionOfDay(guild, now) {
+  if (!db.getSetting(guild.id, 'qod_enabled')) return;
+  if (db.getSetting(guild.id, 'quiet_mode')) return;
+  const channelId = db.getSetting(guild.id, 'qod_channel');
+  if (!channelId) return;
+  const channel = guild.channels.cache.get(String(channelId));
+  if (!channel) return;
+
+  const tz = db.getSetting(guild.id, 'qod_timezone') || null;
+  const target = String(db.getSetting(guild.id, 'qod_time') || '09:00');
+  const nowDate = new Date(now * 1000);
+  const { time, date } = localParts(nowDate, tz);
+
+  // Fire once per day, in the first tick at/after the configured time.
+  if (time < target) return;
+  if (db.getSetting(guild.id, 'qod_last_date') === date) return;
+
+  // Don't interrupt a live voice back-and-forth; try again next tick.
+  if (await inLiveConversation(channel)) return;
+
+  const basePrompt = db.getSetting(guild.id, 'ai_system_prompt');
+  const memoryBlock = memory.getContext(guild.id, null);
+  const system = [basePrompt, memoryBlock].filter(Boolean).join('\n\n');
+  const contextLines = (context.get(String(channel.id)) || []).join('\n');
+
+  let question;
+  try {
+    question = await chat([
+      { role: 'system', content: system },
+      { role: 'user', content: QOD_PROMPT({ channel: channel.name, context: contextLines }) },
+    ], {
+      model: db.getSetting(guild.id, 'ai_model'),
+      temperature: 0.9,
+      maxTokens: 120,
+      guildId: guild.id,
+    });
+  } catch (err) {
+    if (err instanceof InsufficientCreditsError) return;
+    if (err instanceof OpenRouterError) {
+      console.warn('[qod] draft failed:', err.message);
+      return;
+    }
+    throw err;
+  }
+
+  const display = tts.stripVoiceTags(String(question || '').trim());
+  if (!display) return;
+
+  // Record the date BEFORE sending so a send failure doesn't spam retries
+  // every tick; a missed day is preferable to a flooded channel.
+  db.setSetting(guild.id, 'qod_last_date', date);
+
+  try {
+    await channel.send(`❓ **Question of the day:** ${display}`);
+  } catch (err) {
+    console.warn('[qod] send failed:', err.message);
+    return;
+  }
+  memory.recordTurn(guild.id, botName(guild.client, guild.id), display, {
+    source: 'text', userId: null, channel: channel.name,
+  });
+  console.log(`[qod] asked in #${channel.name}: ${display.slice(0, 120)}`);
+
+  if (channel.type === ChannelType.GuildVoice) {
+    try {
+      const voice = await import('./voice.js');
+      await voice.speakInVoice(guild, question);
+    } catch (err) {
+      console.error('[qod] voice playback failed:', err?.message || err);
     }
   }
 }

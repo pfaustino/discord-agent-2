@@ -828,6 +828,7 @@ async function renderSettings() {
     { id: "calendar", label: "Calendar" },
     { id: "voice-detect", label: "Voice detection" },
     { id: "voice-cues", label: "Voice cues" },
+    { id: "voice-feedback", label: "Voice feedback" },
     { id: "voice-phrases", label: "Wake & stop words" },
     { id: "speech", label: "Speech (TTS)" },
     { id: "proactive", label: "Proactive" },
@@ -1018,6 +1019,20 @@ async function renderSettings() {
               "I asked ${esc(botLabel(settings))} earlier" doesn't make it butt in. The
               wake words below still trigger instantly in either mode. The classifier uses
               the utility model, the same cheap one memory and de-escalation use.</span>
+          </div>
+        </section>
+
+        <section class="settings-panel ${activeTab === "voice-feedback" ? "active" : ""}" data-panel="voice-feedback">
+          <div class="section-title">Voice feedback</div>
+          <div class="card">
+            <label class="toggle"><input type="checkbox" id="s-voice_steering_enabled"
+              ${settings.voice_steering_enabled ? "checked" : ""}> Spoken steering ("shorter", "more detail", "go on")</label>
+            <label class="toggle"><input type="checkbox" id="s-voice_reactions_enabled"
+              ${settings.voice_reactions_enabled ? "checked" : ""}> 👍/👎/❓ reactions on ${esc(botLabel(settings))}'s replies</label>
+            <span class="muted">Two quick ways to respond to what ${esc(botLabel(settings))} says.
+              Steering works inside the follow-up window: say "shorter" or "more detail" right after
+              an answer to reshape it without a full re-ask. Reactions appear under each side-chat
+              reply — 👎 or ❓ opens the floor for a no-wake-word follow-up.</span>
           </div>
         </section>
 
@@ -1246,6 +1261,8 @@ async function renderSettings() {
       voice_cue_thinking: readCue("thinking"),
       voice_cue_engaging: readCue("engaging"),
       voice_cue_declined: readCue("declined"),
+      voice_steering_enabled: $("#s-voice_steering_enabled").checked,
+      voice_reactions_enabled: $("#s-voice_reactions_enabled").checked,
       log_channel: $("#s-log_channel").value || null,
     };
     await api(`/guilds/${state.guildId}/settings`, { method: "PUT", body });

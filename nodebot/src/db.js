@@ -214,6 +214,12 @@ export const DEFAULTS = {
   // whether anything is actually said. Requires pressure_enabled.
   checkin_enabled: false,
   checkin_interval_sec: 86400,
+  // Voice feedback: spoken steering phrases recognised inside the follow-up
+  // window ("shorter", "more detail", "go on", "stop there") that reshape the
+  // last answer without a full re-ask, and 👍/👎/❓ reactions on the bot's
+  // side-chat replies that it acknowledges. Both off by default.
+  voice_steering_enabled: false,
+  voice_reactions_enabled: false,
   // de-escalation. deesc_harsh_language is the separate server preference
   // track that can produce a gentle check-in but never climbs the ladder.
   deesc_enabled: false,

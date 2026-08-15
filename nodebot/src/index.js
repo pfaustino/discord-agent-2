@@ -53,8 +53,9 @@ const client = new Client({
     GatewayIntentBits.MessageContent,
     GatewayIntentBits.GuildVoiceStates,
     GatewayIntentBits.GuildMembers,
+    GatewayIntentBits.GuildMessageReactions,
   ],
-  partials: [Partials.Channel],
+  partials: [Partials.Channel, Partials.Message, Partials.Reaction, Partials.User],
 });
 client.commands = await loadCommands();
 
@@ -130,6 +131,18 @@ client.on(Events.GuildMemberRemove, async (member) => {
 
 client.on(Events.VoiceStateUpdate, voice.handleVoiceStateUpdate);
 
+// 👍/👎/❓ on one of the bot's own side-chat replies = lightweight feedback.
+// Partials are enabled so a reaction on a message from before a restart
+// still resolves; the handler no-ops on anything not tracked as her reply.
+client.on(Events.MessageReactionAdd, async (reaction, user) => {
+  try {
+    if (reaction.partial) await reaction.fetch();
+    if (user.partial) await user.fetch();
+    await voice.handleReaction(reaction, user);
+  } catch (err) {
+    console.error('reaction handling failed:', err);
+  }
+});
 process.on('unhandledRejection', (err) => console.error('unhandled rejection:', err));
 
 client.login(DISCORD_TOKEN);

@@ -116,6 +116,68 @@ const followUpUntil = new Map();     // channelId -> ms timestamp the window shu
 // "Max, stop listening" said while he is still speaking actually sticks,
 // instead of being undone by the arm that fires when playback ends.
 const followUpEpoch = new Map();     // channelId -> int
+// The bot's most recent side-chat reply per channel, so a 👍/👎/❓ on it can
+// be tied back to what was said. messageId -> { channelId, text, ts }.
+const replyMessages = new Map();
+const FEEDBACK_EMOJIS = ['👍', '👎', '❓'];
+const REPLY_MESSAGE_TTL_MS = 30 * 60 * 1000; // reactions stop mattering after this
+
+/** Track the bot's just-posted reply so a reaction on it can be interpreted
+ * as feedback about that specific answer. Keyed by message id. */
+function rememberReplyMessage(channelId, message, text) {
+  replyMessages.set(String(message.id), {
+    channelId: String(channelId), text: String(text).slice(0, 500), ts: Date.now(),
+  });
+  // Bound the map: drop entries past their useful life.
+  const cutoff = Date.now() - REPLY_MESSAGE_TTL_MS;
+  for (const [id, m] of replyMessages) {
+    if (m.ts < cutoff) replyMessages.delete(id);
+  }
+}
+
+/** A reaction landed. If it is feedback on one of the bot's own replies,
+ * acknowledge it in-channel and (for ❓/👎) nudge toward a follow-up. */
+export async function handleReaction(reaction, user) {
+  if (user.bot) return;
+  const message = reaction.message;
+  const tracked = replyMessages.get(String(message.id));
+  if (!tracked) return; // not one of her recent replies
+  if (Date.now() - tracked.ts > REPLY_MESSAGE_TTL_MS) return;
+  const guild = message.guild;
+  if (!guild || !db.getSetting(guild.id, 'voice_reactions_enabled')) return;
+  const emoji = reaction.emoji.name;
+  if (!FEEDBACK_EMOJIS.includes(emoji)) return;
+
+  const name = user.displayName || user.username || 'someone';
+  let note;
+  if (emoji === '👍') note = `${name} liked that.`;
+  else if (emoji === '👎') note = `${name} wasn't feeling that answer — want me to take another run at it?`;
+  else note = `${name} has a question about that — go ahead, I'm listening.`;
+
+  try {
+    await message.channel.send(note);
+  } catch (err) {
+    console.warn('[voice] reaction ack failed:', err.message);
+    return;
+  }
+  // For 👎/❓, open a follow-up window so they can just say what they need
+  // without the wake word — that is the whole point of the feedback loop.
+  if (emoji !== '👍' && message.channel.type === ChannelType.GuildVoice) {
+    const seconds = db.getSetting(guild.id, 'voice_followup_window_sec');
+    if (seconds > 0) openFollowUp(message.channel.id, seconds);
+  }
+  console.log(`[voice] feedback ${emoji} from ${name} on reply in #${message.channel.name}`);
+}
+
+/** Is this message id one the bot is tracking for feedback? (test seam) */
+export function isTrackedReply(messageId) {
+  return replyMessages.has(String(messageId));
+}
+
+/** Test seam. */
+export function _resetFeedbackForTests() {
+  replyMessages.clear();
+}
 
 /** Is the follow-up window open on this channel — i.e. can someone speak to
  * Max right now without saying the wake word? */
@@ -158,6 +220,33 @@ function humanCount(channel) {
 
 function voiceChannels(guild) {
   return guild.channels.cache.filter((c) => c.type === ChannelType.GuildVoice);
+}
+
+// Spoken steering inside the follow-up window: short intent phrases that
+// reshape the LAST answer rather than opening a new question. Matched as
+// whole-utterance intent (the transcript is short in a follow-up), not
+// substring — "shorter" inside a longer sentence is not a steering command.
+// Each maps to an instruction prepended to the transcript for the rewrite.
+const STEERING_INTENTS = [
+  { re: /^(?:make it |be |say it |say that )?(?:shorter|more concise|briefer|tldr|tl;dr|in short)[.!]?$/i,
+    instruction: 'Rephrase your last answer much more briefly — one or two sentences, just the core point.' },
+  { re: /^(?:more (?:detail|info|depth)|go deeper|expand(?: on that)?|elaborate|tell me more|explain more)[.!]?$/i,
+    instruction: 'Expand your last answer with more detail and explanation than before.' },
+  { re: /^(?:simpler|simplify|dumb (?:it|that) down|in plain (?:english|terms)|eli5)[.!]?$/i,
+    instruction: 'Rephrase your last answer more simply, in plain terms a beginner would follow.' },
+  { re: /^(?:go on|continue|keep going|carry on|and then\??)[.!]?$/i,
+    instruction: 'Continue naturally from where your last answer left off.' },
+];
+
+/** If this short follow-up utterance is a steering command, return its
+ * rewrite instruction; otherwise null. */
+export function steeringIntent(text) {
+  const t = String(text || '').trim();
+  if (!t || t.length > 60) return null; // steering phrases are short
+  for (const { re, instruction } of STEERING_INTENTS) {
+    if (re.test(t)) return instruction;
+  }
+  return null;
 }
 
 export function matchesAny(text, words) {
@@ -456,7 +545,12 @@ async function handleUtterance(guild, channel, userId, pcm) {
   const followUp = !woken && isFollowUpOpen(channel.id, now);
 
   if ((woken || followUp) && (!pending || pending.cancelled)) {
-    scheduleResponse(channel, name, userId, { followUp });
+    // Inside a live follow-up, a short steering phrase ("shorter", "go on")
+    // reshapes the last answer instead of being read as a fresh question.
+    const steering = followUp && db.getSetting(guild.id, 'voice_steering_enabled')
+      ? steeringIntent(text)
+      : null;
+    scheduleResponse(channel, name, userId, { followUp, steering });
     return;
   }
   // A cancelled pending is a "never mind" that already returned above; only a
@@ -534,7 +628,7 @@ async function armFollowUp(channel, spoke, epoch) {
   console.log(`[voice] [#${channel.name}] listening for a follow-up for ${seconds}s`);
 }
 
-async function respond(channel, speakerName, speakerId, state, { followUp = false, mention = null } = {}) {
+async function respond(channel, speakerName, speakerId, state, { followUp = false, mention = null, steering = null } = {}) {
   const now = Date.now();
   // The wake cooldown exists to stop wake-word spam, and inside a live
   // conversation it would do the opposite of its job: eight seconds is the
@@ -578,6 +672,10 @@ async function respond(channel, speakerName, speakerId, state, { followUp = fals
   }) + VOICE_PROMPT({
     channel: channel.name, speaker: speakerName, followUp, mention,
   });
+  // A steering command ("shorter", "go on") rides on the existing transcript
+  // — which already contains the answer being reshaped — so this instruction
+  // is appended after the voice framing to redirect it.
+  if (steering) systemPrompt += `\n${steering}`;
   if (owner) systemPrompt += VOICE_OWNER_ACTION_NOTE;
   const transcript = formatForPrompt(guild.id, CONTEXT_TURNS);
 
@@ -686,8 +784,20 @@ async function respond(channel, speakerName, speakerId, state, { followUp = fals
     source: 'voice', userId: null, channel: channel.name,
   });
   try {
+    let first = null;
     for (let i = 0; i < display.length; i += 1990) {
-      await channel.send(display.slice(i, i + 1990));
+      const sent = await channel.send(display.slice(i, i + 1990));
+      if (!first) first = sent;
+    }
+    // Offer lightweight feedback on her own reply: tap 👍/👎/❓ instead of
+    // typing. Reactions are added after the post so a reaction event on an
+    // older message never collides with this one.
+    if (first && db.getSetting(guild.id, 'voice_reactions_enabled')) {
+      rememberReplyMessage(channel.id, first, display);
+      for (const emoji of FEEDBACK_EMOJIS) {
+        // eslint-disable-next-line no-await-in-loop
+        await first.react(emoji).catch(() => {});
+      }
     }
   } catch (err) {
     console.warn('[voice] posting reply failed:', err.message);

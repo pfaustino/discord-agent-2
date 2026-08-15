@@ -387,6 +387,11 @@ async function handleUtterance(guild, channel, userId, pcm) {
   }
   lastText.set(userId, [normalized, now]);
   console.log(`[voice] [#${channel.name}] ${name}: ${text}`);
+  try {
+    await channel.send(`🗣️ *${name}: ${text}*`);
+  } catch (err) {
+    console.warn('[voice] posting transcript failed:', err.message);
+  }
 
   recordTurn(guild.id, { source: 'voice', channel: channel.name, speaker: name, text });
   memory.recordTurn(guild.id, name, text, {

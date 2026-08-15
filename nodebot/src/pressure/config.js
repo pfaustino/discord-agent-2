@@ -38,6 +38,11 @@ export function makeEngineConfig(overrides = {}) {
       uncertainty: ['clarify', 0.60],
       safety_concern: ['moderate', 1.00],
       topic_relevance: ['social', 0.30],
+      // A periodic nomination to greet a member by referencing something
+      // they're into. Low weight into the high-threshold social bucket, so
+      // it only ever fires when other social pressure has also built — it's
+      // a nudge toward an already-warm room, not a cold opener.
+      personalized_checkin: ['social', 0.40],
     },
 
     // Flow graph: [src, tgt, per-second rate]. Gradient-driven, capped.

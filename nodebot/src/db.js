@@ -207,6 +207,13 @@ export const DEFAULTS = {
   qod_time: '09:00',
   qod_timezone: null,
   qod_last_date: null,
+  // Proactive personalized check-ins: every checkin_interval_sec, if the
+  // room is quiet, nominate one member with known interests for Helena to
+  // greet by referencing something they're into. Routed through the pressure
+  // engine's social bucket, so the deterministic gate/cooldowns still decide
+  // whether anything is actually said. Requires pressure_enabled.
+  checkin_enabled: false,
+  checkin_interval_sec: 86400,
   // de-escalation. deesc_harsh_language is the separate server preference
   // track that can produce a gentle check-in but never climbs the ladder.
   deesc_enabled: false,
@@ -432,6 +439,13 @@ export function getMemory(guildId, kind) {
   const row = db.prepare('SELECT content, version FROM memory WHERE guild_id = ? AND kind = ?')
     .get(String(guildId), kind);
   return row ? { content: row.content, version: row.version } : { content: '', version: 0 };
+}
+
+/** All memory `kind` keys for a guild matching a prefix (e.g. "profile:"). */
+export function listMemoryKinds(guildId, prefix) {
+  return db.prepare('SELECT kind FROM memory WHERE guild_id = ? AND kind LIKE ?')
+    .all(String(guildId), `${prefix}%`)
+    .map((r) => r.kind);
 }
 
 /** Atomically replace a memory file, archiving the previous version. */

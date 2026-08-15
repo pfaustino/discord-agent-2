@@ -208,6 +208,7 @@ export async function handleMessage(client, message) {
   console.log(`[calendar] textChat guild=${message.guild.id} owner=${owner} enabled=${calendarTools.enabled(message.guild.id)} canRead=${calendarTools.canRead(message, owner)} canWrite=${calendarTools.canWrite(message, owner)}`);
   const systemPrompt = buildSystemPrompt({
     client, guild: message.guild, owner, memory: memoryBlock, media: canGenerate, calendar: canUseCalendar,
+    personalized: memory.hasProfile(guildId, message.author.id),
   });
   const model = modelForTurn(guildId, imageParts.length > 0);
   const baseTools = [

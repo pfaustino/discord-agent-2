@@ -95,13 +95,19 @@ const CONSOLIDATE_PROMPT = ({ today, durable, working, profilesBlock, turnsBlock
   + 'Roll working memory into durable memory: merge, dedupe, drop '
   + `superseded entries (durable under ${DURABLE_MAX} chars). Trim working `
   + `memory to only still-live context (under ${WORKING_MAX} chars). `
-  + 'Profile card fields: goals, active_projects, constraints, vibe_notes, '
+  + 'Profile card fields: goals, active_projects, interests, constraints, '
+  + 'vibe_notes, '
   + 'notes (catch-all for concrete facts about them that don\'t fit the '
   + 'other fields — the more specific the better) — each a string, and '
-  + 'each can run long if there\'s genuinely that much detail to keep.\n'
+  + 'each can run long if there\'s genuinely that much detail to keep. '
+  + 'interests = the hobbies, topics, games, genres, and subjects they keep '
+  + 'coming back to or light up about — distinct from active_projects (what '
+  + 'they\'re building) and goals (what they\'re trying to achieve); this is '
+  + 'what they enjoy talking about.\n'
   + 'Reply with ONLY a JSON object: {"durable": "...", "working": "...", '
   + '"profiles": {"<member display name>": {"goals": "...", '
-  + '"active_projects": "...", "constraints": "...", "vibe_notes": "...", '
+  + '"active_projects": "...", "interests": "...", "constraints": "...", '
+  + '"vibe_notes": "...", '
   + '"notes": "..."}}}\n'
   + 'Only include members in "profiles" who had genuinely new or updated '
   + 'information this round.'
@@ -287,7 +293,7 @@ function formatProfile(guildId, userId) {
   if (!card) return '';
   const lines = [`Name: ${card.name || '?'}`];
   const fields = [['Goals', 'goals'], ['Active projects', 'active_projects'],
-    ['Constraints', 'constraints'], ['Vibe notes', 'vibe_notes'], ['Notes', 'notes']];
+    ['Interests', 'interests'], ['Constraints', 'constraints'], ['Vibe notes', 'vibe_notes'], ['Notes', 'notes']];
   for (const [label, key] of fields) {
     if (card[key]) lines.push(`${label}: ${card[key]}`);
   }
@@ -303,6 +309,27 @@ function loadProfile(guildId, userId) {
   } catch {
     return null;
   }
+}
+
+/** Does this member have a profile card yet? Drives whether the system
+ * prompt tells the model to personalize its replies to them. */
+export function hasProfile(guildId, userId) {
+  return userId != null && loadProfile(guildId, userId) != null;
+}
+
+/** Every member profile card that has a non-empty `interests` field — the
+ * pool a proactive personalized check-in draws from. Each entry is
+ * { userId, name, interests }. */
+export function listProfilesWithInterests(guildId) {
+  const out = [];
+  for (const kind of db.listMemoryKinds(guildId, 'profile:')) {
+    const userId = kind.slice('profile:'.length);
+    const card = loadProfile(guildId, userId);
+    if (card && card.interests && String(card.interests).trim()) {
+      out.push({ userId, name: card.name || '?', interests: String(card.interests).trim() });
+    }
+  }
+  return out;
 }
 
 async function consolidate(guildId) {
@@ -426,7 +453,7 @@ function saveProfile(guildId, userId, name, fields) {
   existing.name = name;
   existing.user_id = userId;
   existing.last_conversation = today();
-  for (const key of ['goals', 'active_projects', 'constraints', 'vibe_notes', 'notes']) {
+  for (const key of ['goals', 'active_projects', 'interests', 'constraints', 'vibe_notes', 'notes']) {
     const value = fields[key];
     if (value) existing[key] = String(value).slice(0, PROFILE_FIELD_MAX);
   }

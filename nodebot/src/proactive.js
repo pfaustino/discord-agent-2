@@ -40,9 +40,15 @@ const CLASSIFY_PROMPT = ({ sources, context, text }) => (
   + `Recent messages:\n${context}\n\nNewest messages:\n${text}`
 );
 
-const DRAFT_PROMPT = ({ channel, topic, bucket, evidence, context }) => (
+const DRAFT_PROMPT = ({ channel, topic, bucket, evidence, context, checkin }) => (
   `\nPressure has built for you to speak UNPROMPTED in the channel "${channel}" `
   + `about "${topic}" (drive: ${bucket}). The signals:\n${evidence}\n\n`
+  + (checkin
+    ? 'This is a personalized check-in: greet that member BY NAME and open '
+      + 'with something that connects to one of their stated interests or '
+      + 'active projects — ask how it\'s going, react to it, offer a thought. '
+      + 'Keep it warm and brief, one short message, not an interrogation.\n\n'
+    : '')
   + `Recent conversation:\n${context}\n\n`
   + 'Decide honestly whether you have something NEW and genuinely useful to '
   + 'add. If not, decline — silence is fine. If yes, write the message in '
@@ -56,6 +62,7 @@ const engines = new Map();      // guildId -> PressureEngine
 const context = new Map();      // channelId -> recent lines
 const pendingLines = new Map(); // channelId -> lines awaiting classification
 const lastClassify = new Map(); // channelId -> timestamp
+const lastCheckinNomination = new Map(); // guildId -> timestamp (sec)
 let ticker = null;
 
 /** Tolerant JSON extraction (handles code fences and prose padding). */
@@ -226,6 +233,9 @@ export function startTicker(client) {
         maybeAskQuestionOfDay(guild, now).catch(
           (err) => console.error('[qod] failed:', err?.message || err),
         );
+        maybeNominateCheckin(guild, engine, now).catch(
+          (err) => console.error('[checkin] failed:', err?.message || err),
+        );
       } catch (err) {
         console.error('[proactive] tick failed:', err?.message || err);
       }
@@ -274,6 +284,10 @@ async function draftAndSpeak(guild, engine, channel, cand, now) {
     .join('\n') || '(none)';
 
   const speakerId = /^\d+$/.test(String(cand.userId || '')) ? cand.userId : null;
+  // A personalized check-in is aimed at one member: hand the drafter their
+  // name and interests explicitly, and load THEIR profile card, so the line
+  // is written to them rather than about the channel in general.
+  const isCheckin = cand.bucket === 'social' && cand.topic.startsWith('checkin-');
   const basePrompt = db.getSetting(guild.id, 'ai_system_prompt');
   const memoryBlock = memory.getContext(guild.id, speakerId);
   const system = [basePrompt, memoryBlock].filter(Boolean).join('\n\n');
@@ -284,6 +298,7 @@ async function draftAndSpeak(guild, engine, channel, cand, now) {
     bucket: cand.bucket,
     evidence,
     context: (context.get(String(channel.id)) || []).join('\n') || '(none)',
+    checkin: isCheckin,
   });
 
   let reply;
@@ -467,6 +482,85 @@ async function maybeAskQuestionOfDay(guild, now) {
       console.error('[qod] voice playback failed:', err?.message || err);
     }
   }
+}
+
+// -- personalized check-ins ----------------------------------------------------
+
+const CHECKIN_SCAN_EVERY_SEC = 3600; // how often each guild is even considered
+
+/** Periodically nominate one member with known interests for a personalized
+ * check-in. This only INGESTS a social-bucket signal — the deterministic gate,
+ * per-user cooldown, and the drafter's own decline option still decide whether
+ * Helena actually says anything. Requires pressure_enabled (it's a proactive
+ * behaviour) and checkin_enabled. */
+async function maybeNominateCheckin(guild, engine, now) {
+  if (!db.getSetting(guild.id, 'pressure_enabled')) return;
+  if (!db.getSetting(guild.id, 'checkin_enabled')) return;
+  if (db.getSetting(guild.id, 'quiet_mode')) return;
+
+  const interval = Math.max(3600, Number(db.getSetting(guild.id, 'checkin_interval_sec')) || 86400);
+  const last = lastCheckinNomination.get(String(guild.id)) || 0;
+  // Rate-limit the scan itself, independent of the per-member interval.
+  if (now - last < CHECKIN_SCAN_EVERY_SEC) return;
+
+  // Pick a member we haven't checked in on recently.
+  const candidates = memory.listProfilesWithInterests(guild.id);
+  if (!candidates.length) return;
+
+  // Find the most recently active text channel to drop the check-in into.
+  const channelId = mostRecentActiveChannel(guild);
+  if (!channelId) return;
+
+  // Rotate through candidates rather than always the same person: pick the
+  // one whose own check-in signal is oldest (or absent). We read the member's
+  // last nomination from a per-user key so restarts don't reset rotation.
+  const eligible = [];
+  for (const c of candidates) {
+    const lastForUser = db.getSetting(guild.id, `checkin:last:${c.userId}`) || 0;
+    if (now - lastForUser >= interval) eligible.push({ ...c, lastForUser });
+  }
+  if (!eligible.length) return;
+  eligible.sort((a, b) => a.lastForUser - b.lastForUser);
+  const pick = eligible[0];
+
+  lastCheckinNomination.set(String(guild.id), now);
+
+  const topic = `checkin-${pick.name.toLowerCase().replace(/\s+/g, '-')}`;
+  const signal = makeSignal({
+    key: `${channelId}:personalized_checkin:${topic}`,
+    source: 'personalized_checkin',
+    weight: 0, // engine assigns the routing default
+    confidence: 1.0,
+    ts: now,
+    topic,
+    channel_id: String(channelId),
+    user_id: String(pick.userId),
+    evidence: `check in with ${pick.name}; they're into: ${pick.interests.slice(0, 200)}`,
+    // Long-lived: a check-in stays relevant for hours, not minutes.
+    max_lifetime: 6 * 3600,
+    decay_rate: 1 / 3600,
+  });
+  if (engine.ingest(signal, now)) {
+    db.setSetting(guild.id, `checkin:last:${pick.userId}`, Math.floor(now));
+    console.log(`[checkin] nominated ${pick.name} for a personalized check-in in #${channelId}`);
+  }
+}
+
+/** Most recently active text channel in this guild, from the observed
+ * message-flow timestamps the engine already keeps. */
+function mostRecentActiveChannel(guild) {
+  let best = null;
+  let bestTs = 0;
+  for (const channel of guild.channels.cache.values()) {
+    if (channel.type !== ChannelType.GuildText) continue;
+    const times = engineFor(guild.id).store.kvGet(`msg_times:${channel.id}`, []);
+    const latest = times.length ? times[times.length - 1][0] : 0;
+    if (latest > bestTs) {
+      bestTs = latest;
+      best = channel.id;
+    }
+  }
+  return best;
 }
 
 /** Is Max mid-conversation in this voice channel right now?

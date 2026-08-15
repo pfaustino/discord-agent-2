@@ -1097,6 +1097,11 @@ async function renderSettings() {
           <div class="card">
             <label class="toggle"><input type="checkbox" id="s-pressure_enabled"
               ${settings.pressure_enabled ? "checked" : ""}> Speak up unprompted when pressure builds</label>
+            <label class="toggle"><input type="checkbox" id="s-checkin_enabled"
+              ${settings.checkin_enabled ? "checked" : ""}> Occasionally check in with members about their interests</label>
+            <label class="field"><span class="lbl">Check-in interval per member (seconds)</span>
+              <input id="s-checkin_interval_sec" type="number" min="3600" step="3600"
+                value="${esc(settings.checkin_interval_sec ?? 86400)}"></label>
           </div>
           <div class="section-title">Question of the day</div>
           <div class="card">
@@ -1213,6 +1218,8 @@ async function renderSettings() {
       calendar_id: $("#s-calendar_id").value,
       calendar_timezone: $("#s-calendar_timezone").value.trim(),
       pressure_enabled: $("#s-pressure_enabled").checked,
+      checkin_enabled: $("#s-checkin_enabled").checked,
+      checkin_interval_sec: parseInt($("#s-checkin_interval_sec").value, 10) || 86400,
       qod_enabled: $("#s-qod_enabled").checked,
       qod_channel: $("#s-qod_channel").value || null,
       qod_time: $("#s-qod_time").value.trim() || "09:00",

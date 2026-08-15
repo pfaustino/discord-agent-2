@@ -574,6 +574,7 @@ async function respond(channel, speakerName, speakerId, state, { followUp = fals
   console.log(`[calendar] voice guild=${guild.id} owner=${owner} enabled=${calendarTools.enabled(guild.id)} canRead=${calendarTools.canRead(fakeMessage, owner)} canWrite=${calendarTools.canWrite(fakeMessage, owner)}`);
   let systemPrompt = buildSystemPrompt({
     client: channel.client, guild, owner, memory: memoryBlock, media: canGenerate, calendar: canUseCalendar,
+    personalized: memory.hasProfile(guild.id, speakerId),
   }) + VOICE_PROMPT({
     channel: channel.name, speaker: speakerName, followUp, mention,
   });

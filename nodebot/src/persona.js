@@ -167,11 +167,21 @@ export const CALENDAR_NOTE = (
   + 'with timezone when possible.'
 );
 
-// Gated on the channel-brains sidecar being configured (channelBrains.js
-// enabled()), deployment-wide rather than per guild or per speaker: search
-// is open to everyone wherever the sidecar exists, and a note the model
-// never got tools for is exactly the stale-capability failure the generated
-// command list exists to prevent.
+// Appended only when the current speaker has a profile card (memory.getContext
+// already surfaced it). Tells the model to actually USE what it knows about
+// this person rather than treating the profile as trivia — the failure it
+// prevents is a generic reply to someone it has rich context on.
+export const PERSONALIZATION_NOTE = (
+  'PERSONALIZATION. You have a profile card for the person you\'re talking to '
+  + 'right now (above, under SPEAKER PROFILE). Actually use it: where it\'s '
+  + 'natural, connect your reply to their interests, active projects, or '
+  + 'goals — reference what they care about, follow up on something they '
+  + 'mentioned before, or frame an answer in terms of what they\'re into. '
+  + 'Do it when it fits the moment, not as a forced non-sequitur, and don\'t '
+  + 'recite their profile back at them. The aim is that talking to you feels '
+  + 'like talking to someone who knows them.'
+);
+
 export const CHANNEL_BRAINS_NOTE = (
   'YOUTUBE CHANNELS. You have a local index of YouTube channel captions, and '
   + 'tools that search it. When someone asks what a YouTube channel or its '

@@ -52,8 +52,23 @@ export function bgBudgetRemaining(now = Date.now()) {
 const JUNK_VERDICT_RE = /^\W*(user\s*safety\W*)?(safe|unsafe)\W*$/i;
 const JUNK_RETRIES = 2;
 
+/** Pull plain text out of an OpenRouter assistant `content` field.
+ *  Providers send a string, an array of parts, or null. */
+export function assistantText(content) {
+  if (content == null) return '';
+  if (typeof content === 'string') return content;
+  if (Array.isArray(content)) {
+    return content.map((part) => {
+      if (typeof part === 'string') return part;
+      if (typeof part?.text === 'string') return part.text;
+      return '';
+    }).join('');
+  }
+  return '';
+}
+
 function isJunkVerdict(content) {
-  const text = (content || '').trim();
+  const text = assistantText(content).trim();
   return text.length < 40 && JUNK_VERDICT_RE.test(text);
 }
 
@@ -374,10 +389,19 @@ export async function chat(messages, {
 
     const toolCalls = reply.tool_calls;
     if (!(toolCalls?.length && useTools)) {
-      const content = reply.content || '';
+      const content = assistantText(reply.content);
       if (isJunkVerdict(content) && junkRetries < JUNK_RETRIES) {
         junkRetries += 1;
         console.log(`[openrouter] junk safety verdict from ${payload.model} — re-rolling (${junkRetries}/${JUNK_RETRIES})`);
+        continue;
+      }
+      // Some models (mistral-nemo among them) burn their tokens on a
+      // malformed tool call and return empty content. Same recovery as
+      // ToolUnsupportedError: one more pass, this time as plain chat.
+      if (!content.trim() && useTools) {
+        console.warn(`[openrouter] empty reply with tools from ${payload.model} — retrying without tools`);
+        useTools = false;
+        round -= 1;
         continue;
       }
       // Metered here, at the one point a reply is actually produced — never

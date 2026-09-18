@@ -756,7 +756,14 @@ async function respond(channel, speakerName, speakerId, state, { followUp = fals
     }
     throw err;
   }
-  if (state.cancelled || !reply) return;
+  if (state.cancelled) return;
+  // An empty completion used to return here silently — the room heard
+  // nothing, even though the utterance was transcribed and billed. Ask
+  // them to repeat so "Leo isn't listening" is never the symptom.
+  if (!String(reply || '').trim()) {
+    console.warn(`[voice] [#${channel.name}] empty model reply — asking ${speakerName} to repeat`);
+    reply = `I heard you, ${speakerName}. I blanked for a second — say that again?`;
+  }
 
   // Follow-up mode hands him every utterance in the channel, including two
   // other people talking to each other. Declining is a valid outcome, and it

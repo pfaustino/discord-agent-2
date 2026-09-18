@@ -4,7 +4,7 @@
 // itself reachability, which this sandbox's egress allowlist blocks anyway.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { chat, OpenRouterError } from '../src/openrouter.js';
+import { chat, OpenRouterError, assistantText } from '../src/openrouter.js';
 
 function jsonResponse(body, status = 200) {
   return { ok: status < 400, status, json: async () => body, text: async () => JSON.stringify(body) };
@@ -15,6 +15,14 @@ function withFetch(fn, run) {
   globalThis.fetch = fn;
   return run().finally(() => { globalThis.fetch = original; });
 }
+
+test('assistantText flattens string, array, and null content', () => {
+  assert.equal(assistantText('hello'), 'hello');
+  assert.equal(assistantText(null), '');
+  assert.equal(assistantText(undefined), '');
+  assert.equal(assistantText([{ type: 'text', text: 'hello ' }, { type: 'text', text: 'there' }]), 'hello there');
+  assert.equal(assistantText(['a', { text: 'b' }]), 'ab');
+});
 
 test('returns plain content when the model makes no tool calls', () => withFetch(
   async () => jsonResponse({ choices: [{ message: { content: 'hello there' } }] }),
@@ -81,6 +89,29 @@ test('malformed tool-call JSON args do not crash the loop', () => {
         toolHandler: async (name, args) => { assert.deepEqual(args, {}); return 'ok'; },
       });
       assert.equal(reply, 'done');
+    },
+  );
+});
+
+test('an empty reply with tools is retried once without tools', () => {
+  const bodies = [];
+  let call = 0;
+  return withFetch(
+    async (_url, opts) => {
+      call += 1;
+      bodies.push(JSON.parse(opts.body));
+      if (call === 1) return jsonResponse({ choices: [{ message: { content: '' } }] });
+      return jsonResponse({ choices: [{ message: { content: 'I can host that quiz' } }] });
+    },
+    async () => {
+      const reply = await chat([{ role: 'user', content: 'host a pub quiz' }], {
+        tools: [{ type: 'function', function: { name: 'web_search' } }],
+        toolHandler: async () => 'unused',
+      });
+      assert.equal(reply, 'I can host that quiz');
+      assert.equal(call, 2);
+      assert.ok(bodies[0].tools, 'first attempt should still send tools');
+      assert.equal(bodies[1].tools, undefined, 'retry must drop tools');
     },
   );
 });

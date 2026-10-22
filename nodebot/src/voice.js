@@ -249,6 +249,21 @@ export function steeringIntent(text) {
   return null;
 }
 
+/** Drop a leading "Leo:" / "Leo," the model copies from the transcript.
+ * Spoken and posted text should be the sentence, not a name label. */
+export function stripLeadingSpeakerName(text, names) {
+  let out = String(text || '').trim();
+  const list = [...new Set((names || []).map((n) => String(n || '').trim()).filter(Boolean))]
+    .sort((a, b) => b.length - a.length);
+  if (!out || !list.length) return out;
+  for (const name of list) {
+    const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const re = new RegExp(`^${escaped}\\s*(?:[:\\-–—]\\s*|\\s*,\\s+)`, 'i');
+    if (re.test(out)) return out.replace(re, '').trim();
+  }
+  return out;
+}
+
 export function matchesAny(text, words) {
   // Both sides get normalized. Normalizing only the transcript — which this
   // did until phrases could contain punctuation — meant any phrase with a
@@ -477,7 +492,7 @@ async function handleUtterance(guild, channel, userId, pcm) {
   lastText.set(userId, [normalized, now]);
   console.log(`[voice] [#${channel.name}] ${name}: ${text}`);
   try {
-    await channel.send(`🗣️ *${name}: ${text}*`);
+    await channel.send(`**${name}:** ${text}`.slice(0, 2000));
   } catch (err) {
     console.warn('[voice] posting transcript failed:', err.message);
   }
@@ -779,7 +794,11 @@ async function respond(channel, speakerName, speakerId, state, { followUp = fals
     return;
   }
 
-  const display = tts.stripVoiceTags(reply) || reply;
+  const spoken = tts.stripVoiceTags(reply) || reply;
+  const display = stripLeadingSpeakerName(
+    spoken,
+    [self, channel.client.user?.username, channel.client.user?.globalName],
+  ) || spoken;
   // "Coming in now." Played before the text post and the TTS, so the cue
   // leads the reply rather than trailing it. playCue resolves once the tone
   // has finished, which is also what keeps it from colliding with speech.

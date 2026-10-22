@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  matchesAny, describeToolCalls, isPass,
+  matchesAny, describeToolCalls, isPass, stripLeadingSpeakerName,
   isFollowUpOpen, openFollowUp, closeFollowUp, _resetForTests,
 } from '../src/voice.js';
 import { normalizePhrase } from '../src/phrases.js';
@@ -31,6 +31,12 @@ test('does not match when no phrase is present', () => {
 
 test('empty word list never matches', () => {
   assert.equal(matchesAny('hey max', []), false);
+});
+
+test('a leading name label is stripped from a spoken reply', () => {
+  assert.equal(stripLeadingSpeakerName('Leo: I can hear you.', ['Leo', 'Helena']), 'I can hear you.');
+  assert.equal(stripLeadingSpeakerName('Helena, I can hear you.', ['Leo', 'Helena']), 'I can hear you.');
+  assert.equal(stripLeadingSpeakerName('I can hear you.', ['Leo']), 'I can hear you.');
 });
 
 test('describeToolCalls produces a known blurb for a recognized tool', () => {

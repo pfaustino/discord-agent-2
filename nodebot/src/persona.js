@@ -275,7 +275,8 @@ export const VOICE_PROMPT = ({
   + "positions people have taken, and the vibe. Weigh in directly and "
   + "conversationally — this will be spoken aloud by English TTS, so English "
   + "only (non-English words get mispronounced badly), no markdown, "
-  + "no walls of text."
+  + "no walls of text. Never start with your name or a \"Name:\" label — "
+  + "the room already knows who is speaking. Say the sentence itself."
 );
 
 export const VOICE_OWNER_ACTION_NOTE = (
